@@ -458,10 +458,14 @@ DockWidgetArea CDockOverlay::visibleDropAreaUnderCursor() const
 //============================================================================
 DockWidgetArea CDockOverlay::showOverlay(QWidget* target)
 {
+    DockWidgetArea da = dropAreaUnderCursor();
+    if (!d->DropPreviewEnabled)
+    {
+        qDebug() << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! !d->DropPreviewEnabled" << da << d->LastLocation;
+    }
 	if (d->TargetWidget == target)
 	{
 		// Hint: We could update geometry of overlay here.
-		DockWidgetArea da = dropAreaUnderCursor();
 		if (da != d->LastLocation)
 		{
             d->hoverDropIndicatorIcon(da);
@@ -471,6 +475,8 @@ DockWidgetArea CDockOverlay::showOverlay(QWidget* target)
 		}
 		return da;
 	}
+
+    qDebug() << "showOverlay!!!!!!!!!!!!!";
 
     d->unhoverDropIndicatorIcon(d->LastLocation);
 
