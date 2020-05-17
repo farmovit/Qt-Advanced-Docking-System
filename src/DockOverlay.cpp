@@ -45,6 +45,28 @@
 namespace ads
 {
 
+class CDropIndicatorWidget : public QLabel
+{
+    Q_OBJECT
+
+public:
+    CDropIndicatorWidget(DockWidgetArea dockWidgetArea,
+                         CDockOverlay::eMode mode,
+                         QLabel* parent = nullptr)
+        : QLabel(parent),
+          m_DockWidgetArea(dockWidgetArea),
+          m_Mode(mode)
+    {
+        setObjectName("CDropIndicatorWidget");
+        setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
+
+private:
+    DockWidgetArea m_DockWidgetArea = NoDockWidgetArea;
+    CDockOverlay::eMode m_Mode = CDockOverlay::ModeDockAreaOverlay;
+};
+
 /**
  * Private data of CDockOverlayCross class
  */
@@ -53,7 +75,7 @@ struct DockOverlayCrossPrivate
 	CDockOverlayCross* _this;
 	CDockOverlay::eMode Mode = CDockOverlay::ModeDockAreaOverlay;
 	CDockOverlay* DockOverlay;
-	QHash<DockWidgetArea, QWidget*> DropIndicatorWidgets;
+	QHash<DockWidgetArea, CDropIndicatorWidget*> DropIndicatorWidgets;
 	QGridLayout* GridLayout;
 	QColor IconColors[5];
 	bool UpdateRequired = false;
@@ -114,211 +136,181 @@ struct DockOverlayCrossPrivate
 	}
 
     //============================================================================
-    /**
-     * Helper function that returns the drop indicator width depending on the
-     * operating system
-     */
-    qreal dropIndicatiorWidth(QLabel* l) const
+    CDropIndicatorWidget* createDropIndicatorWidget(
+            DockWidgetArea DockWidgetArea, CDockOverlay::eMode Mode)
     {
-    #ifdef Q_OS_LINUX
-        Q_UNUSED(l)
-        return 40;
-    #else
-        return static_cast<qreal>(l->fontMetrics().height()) * 3.f;
-    #endif
+        return new CDropIndicatorWidget(this, DockWidgetArea, Mode);
     }
 
+    //============================================================================
+    void updateDropIndicatorWidget(CDropIndicatorWidget* DropIndicatorWidget)
+    {
+        CDropIndicatorWidget* w = qobject_cast<CDropIndicatorWidget*>(DropIndicatorWidget);
+        Q_ASSERT(w != nullptr);
+        w->resetPixmap();
+    }
+};
 
-	//============================================================================
-	QWidget* createDropIndicatorWidget(DockWidgetArea DockWidgetArea,
-		CDockOverlay::eMode Mode)
-	{
-		QLabel* l = new QLabel();
-		l->setObjectName("DockWidgetAreaLabel");
-
-        const qreal metric = dropIndicatiorWidth(l);
-		const QSizeF size(metric, metric);
-
-		l->setPixmap(createHighDpiDropIndicatorPixmap(size, DockWidgetArea, Mode));
-		l->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
-		l->setAttribute(Qt::WA_TranslucentBackground);
-		l->setProperty("dockWidgetArea", DockWidgetArea);
-		return l;
-	}
-
-	//============================================================================
-    void updateDropIndicatorIcon(QWidget* DropIndicatorWidget, bool hover = false)
-	{
-		QLabel* l = qobject_cast<QLabel*>(DropIndicatorWidget);
-        const qreal metric = dropIndicatiorWidth(l);
-		const QSizeF size(metric, metric);
-
-		int Area = l->property("dockWidgetArea").toInt();
-        l->setPixmap(createHighDpiDropIndicatorPixmap(size, (DockWidgetArea)Area, Mode, hover));
-	}
-
-	//============================================================================
-	QPixmap createHighDpiDropIndicatorPixmap(const QSizeF& size, DockWidgetArea DockWidgetArea,
-        CDockOverlay::eMode Mode, bool hover = false)
-	{
-		QColor borderColor = iconColor(CDockOverlayCross::FrameColor);
-		QColor backgroundColor = iconColor(CDockOverlayCross::WindowBackgroundColor);
+QPixmap CDropIndicatorWidget::createHighDpiDropIndicatorPixmap(bool hover)
+{
+    QColor borderColor = m_CrossPrivate->iconColor(CDockOverlayCross::FrameColor);
+    QColor backgroundColor = m_CrossPrivate->iconColor(CDockOverlayCross::WindowBackgroundColor);
 
 #if QT_VERSION >= 0x050600
-		double DevicePixelRatio = _this->window()->devicePixelRatioF();
+    double DevicePixelRatio = window()->devicePixelRatioF();
 #else
-        double DevicePixelRatio = _this->window()->devicePixelRatio();
+    double DevicePixelRatio = window()->devicePixelRatio();
 #endif
-		QSizeF PixmapSize = size * DevicePixelRatio;
-		QPixmap pm(PixmapSize.toSize());
-		pm.fill(QColor(0, 0, 0, 0));
+    const qreal metric = dropIndicatiorWidth(this);
+    const QSizeF size(metric, metric);
+    QSizeF PixmapSize = size * DevicePixelRatio;
+    QPixmap pm(PixmapSize.toSize());
+    pm.fill(QColor(0, 0, 0, 0));
 
-		QPainter p(&pm);
-		QPen pen = p.pen();
-		QRectF ShadowRect(pm.rect());
-		QRectF baseRect;
-		baseRect.setSize(ShadowRect.size() * 0.7);
-		baseRect.moveCenter(ShadowRect.center());
+    QPainter p(&pm);
+    QPen pen = p.pen();
+    QRectF ShadowRect(pm.rect());
+    QRectF baseRect;
+    baseRect.setSize(ShadowRect.size() * 0.7);
+    baseRect.moveCenter(ShadowRect.center());
 
-        constexpr static int maxAlpha = 255;
-        constexpr static int defaultAlpha = 64;
-        constexpr static int hoverDiffAlpha = 50;
+    constexpr static int maxAlpha = 255;
+    constexpr static int defaultAlpha = 64;
+    constexpr static int hoverDiffAlpha = 50;
 
-		// Fill
-		QColor ShadowColor = iconColor(CDockOverlayCross::ShadowColor);
-        if (ShadowColor.alpha() == maxAlpha)
-		{
-            ShadowColor.setAlpha(defaultAlpha);
-		}
+    // Fill
+    QColor ShadowColor = m_CrossPrivate->iconColor(CDockOverlayCross::ShadowColor);
+    if (ShadowColor.alpha() == maxAlpha)
+    {
+        ShadowColor.setAlpha(defaultAlpha);
+    }
 
-        if (CDockManager::configFlags().testFlag(CDockManager::DropIndicatorsHoverEnabled))
+    if (CDockManager::configFlags().testFlag(CDockManager::DropIndicatorsHoverEnabled))
+    {
+        ShadowColor.setAlpha(std::min(ShadowColor.alpha(), maxAlpha - hoverDiffAlpha));
+        if (hover)
         {
-            ShadowColor.setAlpha(std::min(ShadowColor.alpha(), maxAlpha - hoverDiffAlpha));
-            if (hover)
-            {
-                ShadowColor.setAlpha(ShadowColor.alpha() + hoverDiffAlpha);
-            }
+            ShadowColor.setAlpha(ShadowColor.alpha() + hoverDiffAlpha);
+        }
+    }
+
+    p.fillRect(ShadowRect, ShadowColor);
+
+    // Drop area rect.
+    p.save();
+    QRectF areaRect;
+    QLineF areaLine;
+    QRectF nonAreaRect;
+    switch (m_DockWidgetArea)
+    {
+    case TopDockWidgetArea:
+        areaRect = QRectF(baseRect.x(), baseRect.y(), baseRect.width(), baseRect.height() * .5f);
+        nonAreaRect = QRectF(baseRect.x(), ShadowRect.height() * .5f, baseRect.width(), baseRect.height() * .5f);
+        areaLine = QLineF(areaRect.bottomLeft(), areaRect.bottomRight());
+        break;
+    case RightDockWidgetArea:
+        areaRect = QRectF(ShadowRect.width() * .5f, baseRect.y(), baseRect.width() * .5f, baseRect.height());
+        nonAreaRect = QRectF(baseRect.x(), baseRect.y(), baseRect.width() * .5f, baseRect.height());
+        areaLine = QLineF(areaRect.topLeft(), areaRect.bottomLeft());
+        break;
+    case BottomDockWidgetArea:
+        areaRect = QRectF(baseRect.x(), ShadowRect.height() * .5f, baseRect.width(), baseRect.height() * .5f);
+        nonAreaRect = QRectF(baseRect.x(), baseRect.y(), baseRect.width(), baseRect.height() * .5f);
+        areaLine = QLineF(areaRect.topLeft(), areaRect.topRight());
+        break;
+    case LeftDockWidgetArea:
+        areaRect = QRectF(baseRect.x(), baseRect.y(), baseRect.width() * .5f, baseRect.height());
+        nonAreaRect = QRectF(ShadowRect.width() * .5f, baseRect.y(), baseRect.width() * .5f, baseRect.height());
+        areaLine = QLineF(areaRect.topRight(), areaRect.bottomRight());
+        break;
+    default:
+        break;
+    }
+
+    QSizeF baseSize = baseRect.size();
+    if (CDockOverlay::ModeContainerOverlay == m_Mode && m_DockWidgetArea != CenterDockWidgetArea)
+    {
+        baseRect = areaRect;
+    }
+
+    p.fillRect(baseRect, backgroundColor);
+    if (areaRect.isValid())
+    {
+        pen = p.pen();
+        pen.setColor(borderColor);
+        QColor Color = m_CrossPrivate->iconColor(CDockOverlayCross::OverlayColor);
+        if (Color.alpha() == 255)
+        {
+            Color.setAlpha(64);
+        }
+        p.setBrush(Color);
+        p.setPen(Qt::NoPen);
+        p.drawRect(areaRect);
+
+        pen = p.pen();
+        pen.setWidth(1);
+        pen.setColor(borderColor);
+        pen.setStyle(Qt::DashLine);
+        p.setPen(pen);
+        p.drawLine(areaLine);
+    }
+    p.restore();
+
+    p.save();
+    // Draw outer border
+    pen = p.pen();
+    pen.setColor(borderColor);
+    pen.setWidth(1);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(pen);
+    p.drawRect(baseRect);
+
+    // draw window title bar
+    p.setBrush(borderColor);
+    QRectF FrameRect(baseRect.topLeft(), QSizeF(baseRect.width(), baseSize.height() / 10));
+    p.drawRect(FrameRect);
+    p.restore();
+
+    // Draw arrow for outer container drop indicators
+    if (CDockOverlay::ModeContainerOverlay == m_Mode && m_DockWidgetArea != CenterDockWidgetArea)
+    {
+        QRectF ArrowRect;
+        ArrowRect.setSize(baseSize);
+        ArrowRect.setWidth(ArrowRect.width() / 4.6);
+        ArrowRect.setHeight(ArrowRect.height() / 2);
+        ArrowRect.moveCenter(QPointF(0, 0));
+        QPolygonF Arrow;
+        Arrow << ArrowRect.topLeft()
+              << QPointF( ArrowRect.right(),  ArrowRect.center().y())
+              << ArrowRect.bottomLeft();
+        p.setPen(Qt::NoPen);
+        p.setBrush(m_CrossPrivate->iconColor(CDockOverlayCross::ArrowColor));
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.translate(nonAreaRect.center().x(), nonAreaRect.center().y());
+
+        switch (m_DockWidgetArea)
+        {
+        case TopDockWidgetArea:
+            p.rotate(-90);
+            break;
+        case RightDockWidgetArea:
+            break;
+        case BottomDockWidgetArea:
+            p.rotate(90);
+            break;
+        case LeftDockWidgetArea:
+            p.rotate(180);
+            break;
+        default:
+            break;
         }
 
-		p.fillRect(ShadowRect, ShadowColor);
+        p.drawPolygon(Arrow);
+    }
 
-		// Drop area rect.
-		p.save();
-		QRectF areaRect;
-		QLineF areaLine;
-		QRectF nonAreaRect;
-		switch (DockWidgetArea)
-		{
-			case TopDockWidgetArea:
-				areaRect = QRectF(baseRect.x(), baseRect.y(), baseRect.width(), baseRect.height() * .5f);
-				nonAreaRect = QRectF(baseRect.x(), ShadowRect.height() * .5f, baseRect.width(), baseRect.height() * .5f);
-				areaLine = QLineF(areaRect.bottomLeft(), areaRect.bottomRight());
-				break;
-			case RightDockWidgetArea:
-				areaRect = QRectF(ShadowRect.width() * .5f, baseRect.y(), baseRect.width() * .5f, baseRect.height());
-				nonAreaRect = QRectF(baseRect.x(), baseRect.y(), baseRect.width() * .5f, baseRect.height());
-				areaLine = QLineF(areaRect.topLeft(), areaRect.bottomLeft());
-				break;
-			case BottomDockWidgetArea:
-				areaRect = QRectF(baseRect.x(), ShadowRect.height() * .5f, baseRect.width(), baseRect.height() * .5f);
-				nonAreaRect = QRectF(baseRect.x(), baseRect.y(), baseRect.width(), baseRect.height() * .5f);
-				areaLine = QLineF(areaRect.topLeft(), areaRect.topRight());
-				break;
-			case LeftDockWidgetArea:
-				areaRect = QRectF(baseRect.x(), baseRect.y(), baseRect.width() * .5f, baseRect.height());
-				nonAreaRect = QRectF(ShadowRect.width() * .5f, baseRect.y(), baseRect.width() * .5f, baseRect.height());
-				areaLine = QLineF(areaRect.topRight(), areaRect.bottomRight());
-				break;
-			default:
-				break;
-		}
-
-		QSizeF baseSize = baseRect.size();
-		if (CDockOverlay::ModeContainerOverlay == Mode && DockWidgetArea != CenterDockWidgetArea)
-		{
-			baseRect = areaRect;
-		}
-
-		p.fillRect(baseRect, backgroundColor);
-		if (areaRect.isValid())
-		{
-			pen = p.pen();
-			pen.setColor(borderColor);
-			QColor Color = iconColor(CDockOverlayCross::OverlayColor);
-			if (Color.alpha() == 255)
-			{
-				Color.setAlpha(64);
-			}
-			p.setBrush(Color);
-			p.setPen(Qt::NoPen);
-			p.drawRect(areaRect);
-
-			pen = p.pen();
-			pen.setWidth(1);
-			pen.setColor(borderColor);
-			pen.setStyle(Qt::DashLine);
-			p.setPen(pen);
-			p.drawLine(areaLine);
-		}
-		p.restore();
-
-		p.save();
-		// Draw outer border
-		pen = p.pen();
-		pen.setColor(borderColor);
-		pen.setWidth(1);
-		p.setBrush(Qt::NoBrush);
-		p.setPen(pen);
-		p.drawRect(baseRect);
-
-		// draw window title bar
-		p.setBrush(borderColor);
-		QRectF FrameRect(baseRect.topLeft(), QSizeF(baseRect.width(), baseSize.height() / 10));
-		p.drawRect(FrameRect);
-		p.restore();
-
-		// Draw arrow for outer container drop indicators
-		if (CDockOverlay::ModeContainerOverlay == Mode && DockWidgetArea != CenterDockWidgetArea)
-		{
-			QRectF ArrowRect;
-			ArrowRect.setSize(baseSize);
-			ArrowRect.setWidth(ArrowRect.width() / 4.6);
-			ArrowRect.setHeight(ArrowRect.height() / 2);
-			ArrowRect.moveCenter(QPointF(0, 0));
-			QPolygonF Arrow;
-			Arrow << ArrowRect.topLeft()
-				<< QPointF( ArrowRect.right(),  ArrowRect.center().y())
-				<< ArrowRect.bottomLeft();
-			p.setPen(Qt::NoPen);
-			p.setBrush(iconColor(CDockOverlayCross::ArrowColor));
-			p.setRenderHint(QPainter::Antialiasing, true);
-			p.translate(nonAreaRect.center().x(), nonAreaRect.center().y());
-
-			switch (DockWidgetArea)
-			{
-			case TopDockWidgetArea:
-				 p.rotate(-90);
-				 break;
-			case RightDockWidgetArea:
-				 break;
-			case BottomDockWidgetArea:
-				 p.rotate(90);
-				 break;
-			case LeftDockWidgetArea:
-				p.rotate(180);
-				 break;
-			default:
-				 break;
-			}
-
-			p.drawPolygon(Arrow);
-		}
-
-		pm.setDevicePixelRatio(DevicePixelRatio);
-		return pm;
-	}
-
-};
+    pm.setDevicePixelRatio(DevicePixelRatio);
+    return pm;
+}
 
 /**
  * Private data class of CDockOverlay
@@ -338,35 +330,6 @@ struct DockOverlayPrivate
      * Private data constructor
      */
     DockOverlayPrivate(CDockOverlay* _public) : _this(_public) {}
-
-    void hoverDropIndicatorIcon(const DockWidgetArea area)
-    {
-        updateDropIndicatorIcon(area, true);
-    }
-
-    void unhoverDropIndicatorIcon(const DockWidgetArea area)
-    {
-        updateDropIndicatorIcon(area, false);
-    }
-
-private:
-    void updateDropIndicatorIcon(const DockWidgetArea area, bool hover)
-    {
-        if (!CDockManager::configFlags().testFlag(CDockManager::DropIndicatorsHoverEnabled))
-        {
-            return;
-        }
-
-        if (area != DockWidgetArea::NoDockWidgetArea && area != DockWidgetArea::InvalidDockWidgetArea)
-        {
-            const auto widget = Cross->d->DropIndicatorWidgets[area];
-            if (widget != nullptr)
-            {
-                Cross->d->updateDropIndicatorIcon(widget, hover);
-                Cross->update();
-            }
-        }
-    }
 };
 
 //============================================================================
@@ -385,6 +348,7 @@ CDockOverlay::CDockOverlay(QWidget* parent, eMode Mode) :
 	setWindowTitle("DockOverlay");
 	setAttribute(Qt::WA_NoSystemBackground);
 	setAttribute(Qt::WA_TranslucentBackground);
+    setAttribute(Qt::WA_Hover);
 
 	d->Cross->setVisible(false);
 	setVisible(false);
@@ -458,27 +422,17 @@ DockWidgetArea CDockOverlay::visibleDropAreaUnderCursor() const
 //============================================================================
 DockWidgetArea CDockOverlay::showOverlay(QWidget* target)
 {
-    DockWidgetArea da = dropAreaUnderCursor();
-    if (!d->DropPreviewEnabled)
-    {
-        qDebug() << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! !d->DropPreviewEnabled" << da << d->LastLocation;
-    }
 	if (d->TargetWidget == target)
 	{
 		// Hint: We could update geometry of overlay here.
+		DockWidgetArea da = dropAreaUnderCursor();
 		if (da != d->LastLocation)
 		{
-            d->hoverDropIndicatorIcon(da);
-            d->unhoverDropIndicatorIcon(d->LastLocation);
-            repaint();
+			repaint();
 			d->LastLocation = da;
 		}
 		return da;
 	}
-
-    qDebug() << "showOverlay!!!!!!!!!!!!!";
-
-    d->unhoverDropIndicatorIcon(d->LastLocation);
 
 	d->TargetWidget = target;
 	d->LastLocation = InvalidDockWidgetArea;
@@ -498,7 +452,6 @@ DockWidgetArea CDockOverlay::showOverlay(QWidget* target)
 void CDockOverlay::hideOverlay()
 {
 	hide();
-    d->unhoverDropIndicatorIcon(d->LastLocation);
     d->TargetWidget.clear();
 	d->LastLocation = InvalidDockWidgetArea;
 	d->DropAreaRect = QRect();
@@ -655,6 +608,7 @@ CDockOverlayCross::CDockOverlayCross(CDockOverlay* overlay) :
 #endif
 	setWindowTitle("DockOverlayCross");
 	setAttribute(Qt::WA_TranslucentBackground);
+    setAttribute(Qt::WA_Hover);
 
 	d->GridLayout = new QGridLayout();
 	d->GridLayout->setSpacing(0);
@@ -674,7 +628,7 @@ void CDockOverlayCross::setupOverlayCross(CDockOverlay::eMode Mode)
 {
 	d->Mode = Mode;
 
-	QHash<DockWidgetArea, QWidget*> areaWidgets;
+	QHash<DockWidgetArea, CDropIndicatorWidget*> areaWidgets;
 	areaWidgets.insert(TopDockWidgetArea, d->createDropIndicatorWidget(TopDockWidgetArea, Mode));
 	areaWidgets.insert(RightDockWidgetArea, d->createDropIndicatorWidget(RightDockWidgetArea, Mode));
 	areaWidgets.insert(BottomDockWidgetArea, d->createDropIndicatorWidget(BottomDockWidgetArea, Mode));
@@ -700,7 +654,7 @@ void CDockOverlayCross::updateOverlayIcons()
 
 	for (auto Widget : d->DropIndicatorWidgets)
 	{
-		d->updateDropIndicatorIcon(Widget);
+		d->updateDropIndicatorWidget(Widget);
 	}
 #if QT_VERSION >= 0x050600
 	d->LastDevicePixelRatio = devicePixelRatioF();
@@ -726,10 +680,10 @@ QColor CDockOverlayCross::iconColor(eIconColor ColorIndex) const
 
 
 //============================================================================
-void CDockOverlayCross::setAreaWidgets(const QHash<DockWidgetArea, QWidget*>& widgets)
+void CDockOverlayCross::setAreaWidgets(const QHash<DockWidgetArea, CDropIndicatorWidget*>& widgets)
 {
 	// Delete old widgets.
-	QMutableHashIterator<DockWidgetArea, QWidget*> i(d->DropIndicatorWidgets);
+	QMutableHashIterator<DockWidgetArea, CDropIndicatorWidget*> i(d->DropIndicatorWidgets);
 	while (i.hasNext())
 	{
 		i.next();
@@ -741,7 +695,7 @@ void CDockOverlayCross::setAreaWidgets(const QHash<DockWidgetArea, QWidget*>& wi
 
 	// Insert new widgets into grid.
 	d->DropIndicatorWidgets = widgets;
-	QHashIterator<DockWidgetArea, QWidget*> i2(d->DropIndicatorWidgets);
+	QHashIterator<DockWidgetArea, CDropIndicatorWidget*> i2(d->DropIndicatorWidgets);
 	while (i2.hasNext())
 	{
 		i2.next();
@@ -788,7 +742,7 @@ void CDockOverlayCross::setAreaWidgets(const QHash<DockWidgetArea, QWidget*>& wi
 DockWidgetArea CDockOverlayCross::cursorLocation() const
 {
 	const QPoint pos = mapFromGlobal(QCursor::pos());
-	QHashIterator<DockWidgetArea, QWidget*> i(d->DropIndicatorWidgets);
+	QHashIterator<DockWidgetArea, CDropIndicatorWidget*> i(d->DropIndicatorWidgets);
 	while (i.hasNext())
 	{
 		i.next();
@@ -880,8 +834,8 @@ QString CDockOverlayCross::iconColors() const
 	return QString();
 }
 
-
-
 } // namespace ads
 //----------------------------------------------------------------------------
 
+// DELETEME:
+#include "DockOverlay.moc"
